@@ -16,13 +16,13 @@ class MakeInertiaTable extends Command
 
     public function handle(): int
     {
-        $model      = Str::studly($this->argument('model'));
+        $model = Str::studly($this->argument('model'));
         $modelPlural = Str::plural($model);
-        $modelLower  = Str::lower($model);
-        $modelSlug   = Str::kebab($modelPlural);        // e.g. blog-posts
-        $modelCamel  = Str::camel($modelPlural);        // e.g. blogPosts
-        $routeName   = Str::snake($modelPlural);        // e.g. blog_posts → blog_posts
-        $routeSlug   = $modelSlug;                      // e.g. blog-posts (URL)
+        $modelLower = Str::lower($model);
+        $modelSlug = Str::kebab($modelPlural);        // e.g. blog-posts
+        $modelCamel = Str::camel($modelPlural);        // e.g. blogPosts
+        $routeName = Str::snake($modelPlural);        // e.g. blog_posts → blog_posts
+        $routeSlug = $modelSlug;                      // e.g. blog-posts (URL)
 
         // ── Parse columns ────────────────────────────────────────────────────
         $rawCols = $this->option('columns')
@@ -31,12 +31,12 @@ class MakeInertiaTable extends Command
 
         // ── Paths ────────────────────────────────────────────────────────────
         $controllerPath = app_path("Http/Controllers/{$model}Controller.php");
-        $vueDirPath     = resource_path("js/Pages/{$modelPlural}");
-        $vuePath        = "{$vueDirPath}/Index.vue";
+        $vueDirPath = resource_path("js/Pages/{$modelPlural}");
+        $vuePath = "{$vueDirPath}/Index.vue";
 
         // ── Guard: already exists ────────────────────────────────────────────
         foreach ([$controllerPath, $vuePath] as $path) {
-            if (file_exists($path) && ! $this->option('force')) {
+            if (file_exists($path) && !$this->option('force')) {
                 $this->error("File already exists: {$path}");
                 $this->line('  Use --force to overwrite.');
                 return self::FAILURE;
@@ -44,7 +44,7 @@ class MakeInertiaTable extends Command
         }
 
         // ── Generate Controller ───────────────────────────────────────────────
-        $colDefs  = $this->buildColumnDefs($rawCols);
+        $colDefs = $this->buildColumnDefs($rawCols);
         $colSelect = implode("', '", $rawCols);
 
         $controller = <<<PHP
@@ -175,7 +175,7 @@ const props = defineProps({ table: { type: Object, required: true } })
 const selectedIds = ref([])
 
 function handleBulkAction({ action, ids }) {
-    if (action === 'delete' && confirm(\`Delete \${ids.length} record(s)?\`)) {
+    if (action === 'delete' && confirm('Delete ' + ids.length + ' record(s)?')) {
         router.delete(route('{$routeName}.bulk-destroy'), {
             data: { ids },
             preserveScroll: true,
@@ -185,7 +185,7 @@ function handleBulkAction({ action, ids }) {
 }
 
 function confirmDelete(row) {
-    if (confirm(\`Delete this record?\`)) {
+    if (confirm('Delete this record?')) {
         router.delete(route('{$routeName}.bulk-destroy'), {
             data: { ids: [row.id] },
             preserveScroll: true,
@@ -205,7 +205,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 ROUTES;
 
         // ── Write files ───────────────────────────────────────────────────────
-        if (! is_dir($vueDirPath)) {
+        if (!is_dir($vueDirPath)) {
             mkdir($vueDirPath, 0755, true);
         }
 
@@ -231,8 +231,8 @@ ROUTES;
     {
         $lines = [];
         foreach ($cols as $key) {
-            $label      = Str::title(str_replace('_', ' ', $key));
-            $sortable   = in_array($key, ['id', 'created_at', 'updated_at', 'name', 'email', 'title']) ? 'true' : 'false';
+            $label = Str::title(str_replace('_', ' ', $key));
+            $sortable = in_array($key, ['id', 'created_at', 'updated_at', 'name', 'email', 'title']) ? 'true' : 'false';
             $searchable = in_array($key, ['name', 'email', 'title', 'description', 'slug']) ? 'true' : 'false';
 
             $lines[] = "            ['key' => '{$key}', 'label' => '{$label}', 'sortable' => {$sortable}, 'searchable' => {$searchable}, 'exportable' => true],";
@@ -255,7 +255,7 @@ VUE;
             } elseif ($key === 'email') {
                 $slots[] = <<<VUE
                             <template #cell-email="{ value }">
-                                <a :href="\`mailto:\${value}\`" class="text-blue-600 dark:text-blue-400 hover:underline text-sm">{{ value }}</a>
+                                <a :href="'mailto:' + value" class="text-blue-600 dark:text-blue-400 hover:underline text-sm">{{ value }}</a>
                             </template>
 VUE;
             }
