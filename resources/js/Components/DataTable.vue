@@ -1,181 +1,150 @@
 <template>
   <div class="qdt-root">
 
-    <!-- TOOLBAR -->
-    <div class="qdt-toolbar">
-      <div class="qdt-search-wrap">
-        <svg class="qdt-search-icon" viewBox="0 0 20 20" fill="none">
-          <circle cx="8.5" cy="8.5" r="5.5" stroke="currentColor" stroke-width="1.5"/>
-          <path d="M14 14l3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-        </svg>
-        <input v-model="localFilters.search" class="qdt-search-input" type="text" placeholder="Search..." @input="debouncedSearch"/>
-      </div>
+    <!-- Toolbar -->
+    <DataTableToolbar
+      v-model:search="localFilters.search"
+      :selected-count="selectedIds.length"
+      :bulk-actions="bulkActions"
+      :columns="toggleableColumns"
+      :show-column-toggle="showColumnToggle"
+      :exportable="exportable"
+      :filters-open="filtersOpen"
+      :cols-open="colsOpen"
+      :actions-open="actionsOpen"
+      :has-active-filters="hasActiveFilters"
+      @bulk-action="handleBulkAction"
+      @toggle-filters="filtersOpen = !filtersOpen; colsOpen = false; actionsOpen = false"
+      @toggle-cols="colsOpen = !colsOpen; filtersOpen = false; actionsOpen = false"
+      @toggle-actions="actionsOpen = !actionsOpen; filtersOpen = false; colsOpen = false"
+      @clear-filters="clearFilters"
+      @toggle-column="toggleColumn"
+      @export="exportAs"
+      @update:search="onSearchInput"
+    >
+      <template v-for="(_, name) in toolbarSlots" #[name]="slotProps">
+        <slot :name="name" v-bind="slotProps ?? {}" />
+      </template>
+    </DataTableToolbar>
 
-      <div class="qdt-toolbar-right">
-        <template v-if="selectedIds.length && bulkActions.length">
-          <span class="qdt-selected-badge">{{ selectedIds.length }} selected</span>
-          <button v-for="action in bulkActions" :key="action.key" class="qdt-btn qdt-btn-danger" @click="handleBulkAction(action)">{{ action.label }}</button>
-        </template>
-
-        <slot name="actions" />
-
-        <div v-if="exportable" class="qdt-dropdown" v-click-outside="() => actionsOpen = false">
-          <button class="qdt-btn qdt-btn-outline" @click="actionsOpen = !actionsOpen">
-            <svg viewBox="0 0 16 16" fill="none" width="13" height="13" style="margin-right:4px"><path d="M8 3v7M5 7l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 12h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-            Actions
-          </button>
-          <div v-if="actionsOpen" class="qdt-dropdown-menu qdt-dropdown-menu--right">
-            <button class="qdt-dropdown-item" @click="exportAs('xlsx'); actionsOpen=false">Export XLSX</button>
-            <button class="qdt-dropdown-item" @click="exportAs('csv'); actionsOpen=false">Export CSV</button>
-          </div>
-        </div>
-
-        <div class="qdt-dropdown" v-click-outside="() => filtersOpen = false">
-          <button class="qdt-btn qdt-btn-outline" @click="filtersOpen = !filtersOpen">
-            <svg viewBox="0 0 16 16" fill="none" width="13" height="13" style="margin-right:4px"><path d="M2 4h12M4 8h8M6 12h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-            Filters
-          </button>
-          <div v-if="filtersOpen" class="qdt-dropdown-menu qdt-dropdown-menu--right">
-            <slot name="filters"><span class="qdt-dropdown-empty">No filters defined.</span></slot>
-          </div>
-        </div>
-
-        <div v-if="showColumnToggle" class="qdt-dropdown" v-click-outside="() => colsOpen = false">
-          <button class="qdt-btn qdt-btn-outline" @click="colsOpen = !colsOpen">
-            <svg viewBox="0 0 16 16" fill="none" width="13" height="13" style="margin-right:4px"><rect x="2" y="2" width="5" height="12" rx="1" stroke="currentColor" stroke-width="1.3"/><rect x="9" y="2" width="5" height="12" rx="1" stroke="currentColor" stroke-width="1.3"/></svg>
-            Columns
-          </button>
-          <div v-if="colsOpen" class="qdt-dropdown-menu qdt-dropdown-menu--right">
-            <label v-for="col in toggleableColumns" :key="col.key" class="qdt-col-item">
-              <span class="qdt-col-checkbox" :class="{ 'qdt-col-checkbox--on': col.visible }">
-                <svg v-if="col.visible" viewBox="0 0 10 10" fill="none" width="10" height="10"><path d="M2 5l2.5 2.5L8 3" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              </span>
-              <input type="checkbox" v-model="col.visible" class="sr-only" />
-              {{ col.label }}
-            </label>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- TABLE — fixed container, overlay loading (no layout shift) -->
+    <!-- Table container -->
     <div class="qdt-table-container">
-      <Transition name="qdt-fade">
-        <div v-if="loading" class="qdt-overlay">
-          <div class="qdt-spinner-wrap">
-            <svg class="qdt-spinner" viewBox="0 0 24 24" fill="none" width="26" height="26">
-              <circle cx="12" cy="12" r="10" stroke="#e5e7eb" stroke-width="3"/>
-              <path d="M12 2a10 10 0 0 1 10 10" stroke="#6366f1" stroke-width="3" stroke-linecap="round"/>
-            </svg>
-          </div>
-        </div>
-      </Transition>
+
+      <!-- Loading overlay -->
+      <DataTableLoading :show="loading" />
 
       <div class="qdt-table-scroll">
         <table class="qdt-table">
-          <thead>
-            <tr>
-              <th v-if="selectable" class="qdt-th qdt-th--check">
-                <input type="checkbox" class="qdt-checkbox" :checked="allSelected" :indeterminate.prop="someSelected" @change="toggleAll"/>
-              </th>
-              <th v-for="col in visibleColumns" :key="col.key" class="qdt-th" :class="{ 'qdt-th--sortable': col.sortable, 'qdt-th--sorted': localFilters.sort === col.key }" @click="col.sortable && sort(col.key)">
-                <div class="qdt-th-inner">
-                  <span>{{ col.label }}</span>
-                  <span v-if="col.sortable" class="qdt-sort-icon">
-                    <template v-if="localFilters.sort === col.key">
-                      <svg v-if="localFilters.direction === 'asc'" viewBox="0 0 10 12" fill="none" width="9" height="11"><path d="M5 10V2M1 5l4-4 4 4" stroke="#6366f1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                      <svg v-else viewBox="0 0 10 12" fill="none" width="9" height="11"><path d="M5 2v8M1 7l4 4 4-4" stroke="#6366f1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                    </template>
-                    <svg v-else viewBox="0 0 10 14" fill="none" width="9" height="12" opacity=".35"><path d="M5 12V2M1 5.5l4-4 4 4" stroke="#6b7280" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 2v10M1 8.5l4 4 4-4" stroke="#6b7280" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                  </span>
-                </div>
-              </th>
-              <th v-if="$slots.rowActions" class="qdt-th qdt-th--actions"></th>
-            </tr>
-          </thead>
+
+          <!-- Header -->
+          <DataTableHeader
+            :columns="visibleColumns"
+            :sort="localFilters.sort"
+            :direction="localFilters.direction"
+            :all-selected="allSelected"
+            :some-selected="someSelected"
+            :show-favorite="showFavorite"
+            :from="meta.from ?? 0"
+            :to="meta.to ?? 0"
+            :total="meta.total ?? 0"
+            @sort="onSort"
+            @toggle-all="toggleAll"
+          />
+
           <tbody>
-            <tr v-if="!rows.length">
-              <td :colspan="colSpan" class="qdt-td-empty">
-                <div class="qdt-empty-inner">
-                  <svg viewBox="0 0 48 48" fill="none" width="40" height="40"><rect x="6" y="10" width="36" height="28" rx="3" stroke="#d1d5db" stroke-width="2"/><path d="M6 18h36" stroke="#d1d5db" stroke-width="2"/><path d="M14 26h8M14 32h14" stroke="#d1d5db" stroke-width="2" stroke-linecap="round"/></svg>
-                  <p>No records found.</p>
-                </div>
-              </td>
-            </tr>
-            <tr v-for="row in rows" :key="row[rowKey]" class="qdt-tr" :class="{ 'qdt-tr--selected': isSelected(row) }">
-              <td v-if="selectable" class="qdt-td qdt-td--check">
-                <input type="checkbox" class="qdt-checkbox" :checked="isSelected(row)" @change="toggleRow(row)"/>
-              </td>
-              <td v-for="col in visibleColumns" :key="col.key" class="qdt-td">
-                <slot :name="`cell-${col.key}`" :row="row" :value="getValue(row, col.key)">{{ getValue(row, col.key) }}</slot>
-              </td>
-              <td v-if="$slots.rowActions" class="qdt-td qdt-td--actions">
-                <slot name="rowActions" :row="row" />
-              </td>
-            </tr>
+            <!-- Empty state -->
+            <DataTableEmpty
+              v-if="!rows.length"
+              :colspan="colSpan"
+            />
+
+            <!-- Rows -->
+            <DataTableRow
+              v-for="row in rows"
+              :key="row[rowKey]"
+              :row="row"
+              :columns="visibleColumns"
+              :selected="isSelected(row)"
+              :show-favorite="showFavorite"
+              @toggle="toggleRow(row)"
+              @toggle-favorite="toggleFavorite(row)"
+            >
+              <!-- Forward all cell slots -->
+              <template
+                v-for="col in visibleColumns"
+                #[`cell-${col.key}`]="slotProps"
+              >
+                <slot :name="`cell-${col.key}`" v-bind="slotProps" />
+              </template>
+
+              <!-- Forward rowActions slot -->
+              <template #rowActions="slotProps">
+                <slot name="rowActions" v-bind="slotProps" />
+              </template>
+            </DataTableRow>
           </tbody>
+
         </table>
       </div>
     </div>
 
-    <!-- FOOTER -->
-    <div class="qdt-footer">
-      <div class="qdt-footer-left">
-        <span v-if="selectedIds.length">{{ selectedIds.length }} of {{ meta.total }} row(s) selected.</span>
-        <span v-else>No rows selected.</span>
-      </div>
-      <div class="qdt-footer-right">
-        <span class="qdt-perpage-label">Rows per page</span>
-        <div class="qdt-select-wrap">
-          <select class="qdt-perpage-select" v-model="localFilters.per_page" @change="changePerPage">
-            <option v-for="n in meta.per_page_options" :key="n" :value="n">{{ n }}</option>
-          </select>
-          <svg class="qdt-select-caret" viewBox="0 0 10 6" fill="none" width="10" height="6"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-        </div>
-        <span class="qdt-page-info">Page {{ meta.current_page }} of {{ meta.last_page }}</span>
-        <div class="qdt-pagination">
-          <button class="qdt-pag-btn" :disabled="meta.current_page <= 1" @click="goToPage(1)"><svg viewBox="0 0 14 14" fill="none" width="12" height="12"><path d="M10 2L5 7l5 5M3 2v10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-          <button class="qdt-pag-btn" :disabled="meta.current_page <= 1" @click="goToPage(meta.current_page - 1)"><svg viewBox="0 0 8 14" fill="none" width="7" height="13"><path d="M7 1L1 7l6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-          <button class="qdt-pag-btn" :disabled="meta.current_page >= meta.last_page" @click="goToPage(meta.current_page + 1)"><svg viewBox="0 0 8 14" fill="none" width="7" height="13"><path d="M1 1l6 6-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-          <button class="qdt-pag-btn" :disabled="meta.current_page >= meta.last_page" @click="goToPage(meta.last_page)"><svg viewBox="0 0 14 14" fill="none" width="12" height="12"><path d="M4 2l5 5-5 5M11 2v10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-        </div>
-      </div>
-    </div>
+    <!-- Footer -->
+    <DataTableFooter
+      :per-page="localFilters.per_page"
+      :per-page-options="meta.per_page_options ?? [15, 25, 50, 100]"
+      :current-page="meta.current_page ?? 1"
+      :last-page="meta.last_page ?? 1"
+      @change-per-page="onChangePerPage"
+      @go-to-page="goToPage"
+    />
+
   </div>
 </template>
 
 <script setup>
-import { ref, computed, reactive } from 'vue'
+import { ref, computed, reactive, useSlots } from 'vue'
 import { router } from '@inertiajs/vue3'
 
-const vClickOutside = {
-  mounted(el, binding) {
-    el.__vco__ = (e) => { if (!el.contains(e.target)) binding.value(e) }
-    document.addEventListener('pointerdown', el.__vco__)
-  },
-  unmounted(el) { document.removeEventListener('pointerdown', el.__vco__) },
-}
+import DataTableToolbar from './DataTable/DataTableToolbar.vue'
+import DataTableHeader  from './DataTable/DataTableHeader.vue'
+import DataTableRow     from './DataTable/DataTableRow.vue'
+import DataTableEmpty   from './DataTable/DataTableEmpty.vue'
+import DataTableFooter  from './DataTable/DataTableFooter.vue'
+import DataTableLoading from './DataTable/DataTableLoading.vue'
 
+// ── Props ─────────────────────────────────────────────────────────────────
 const props = defineProps({
-  columns:          { type: Array,   required: true },
-  rows:             { type: Array,   default: () => [] },
-  meta:             { type: Object,  required: true },
-  filters:          { type: Object,  default: () => ({}) },
-  rowKey:           { type: String,  default: 'id' },
-  selectable:       { type: Boolean, default: true },
-  showColumnToggle: { type: Boolean, default: true },
-  exportable:       { type: Boolean, default: true },
-  exportUrl:        { type: String,  default: '' },
-  bulkActions:      { type: Array,   default: () => [] },
-  searchDebounce:   { type: Number,  default: 350 },
+  columns:           { type: Array,   required: true },
+  rows:              { type: Array,   default: () => [] },
+  meta:              { type: Object,  required: true },
+  filters:           { type: Object,  default: () => ({}) },
+  rowKey:            { type: String,  default: 'id' },
+  selectable:        { type: Boolean, default: true },
+  showColumnToggle:  { type: Boolean, default: true },
+  showFavorite:      { type: Boolean, default: false },
+  exportable:        { type: Boolean, default: true },
+  exportUrl:         { type: String,  default: '' },
+  bulkActions:       { type: Array,   default: () => [] },
+  searchDebounce:    { type: Number,  default: 350 },
 })
 
-const emit = defineEmits(['bulkAction', 'selectionChange'])
+const emit = defineEmits(['bulkAction', 'selectionChange', 'favoriteToggle'])
 
+const slots = useSlots()
+
+// Toolbar slots to forward
+const toolbarSlots = computed(() => {
+  const names = ['topFilters', 'actions', 'filters']
+  return Object.fromEntries(
+    names.filter(n => !!slots[n]).map(n => [n, slots[n]])
+  )
+})
+
+// ── State ─────────────────────────────────────────────────────────────────
 const loading     = ref(false)
-const actionsOpen = ref(false)
 const filtersOpen = ref(false)
 const colsOpen    = ref(false)
+const actionsOpen = ref(false)
 const selectedIds = ref([])
 
 const localFilters = reactive({
@@ -185,48 +154,102 @@ const localFilters = reactive({
   per_page:  props.filters.per_page  ?? props.meta?.per_page ?? 15,
 })
 
-const toggleableColumns = reactive(props.columns.map(c => ({ ...c, visible: c.visible !== false })))
+const toggleableColumns = reactive(
+  props.columns.map(c => ({ ...c, visible: c.visible !== false }))
+)
 
+// ── Computed ──────────────────────────────────────────────────────────────
 const visibleColumns = computed(() => toggleableColumns.filter(c => c.visible))
-const colSpan = computed(() => visibleColumns.value.length + (props.selectable ? 1 : 0) + 1)
-const allSelected = computed(() => props.rows.length > 0 && props.rows.every(r => selectedIds.value.includes(r[props.rowKey])))
-const someSelected = computed(() => !allSelected.value && props.rows.some(r => selectedIds.value.includes(r[props.rowKey])))
 
-function getValue(row, key) { return key.split('.').reduce((o, k) => o?.[k], row) }
-function isSelected(row) { return selectedIds.value.includes(row[props.rowKey]) }
+const colSpan = computed(() =>
+  visibleColumns.value.length
+  + 2                               // checkbox + actions col
+  + (props.showFavorite ? 1 : 0)
+)
 
+const allSelected = computed(() =>
+  props.rows.length > 0 &&
+  props.rows.every(r => selectedIds.value.includes(r[props.rowKey]))
+)
+const someSelected = computed(() =>
+  !allSelected.value &&
+  props.rows.some(r => selectedIds.value.includes(r[props.rowKey]))
+)
+const hasActiveFilters = computed(() =>
+  !!(localFilters.search || localFilters.sort)
+)
+
+// ── Helpers ───────────────────────────────────────────────────────────────
+function isSelected(row) {
+  return selectedIds.value.includes(row[props.rowKey])
+}
+
+// ── Navigation ────────────────────────────────────────────────────────────
 function navigate(extra = {}) {
   loading.value = true
-  router.get(window.location.pathname, { ...localFilters, ...extra }, {
-    preserveState: true, preserveScroll: true, replace: true,
-    onFinish: () => { loading.value = false },
-  })
+  router.get(
+    window.location.pathname,
+    { ...localFilters, ...extra },
+    {
+      preserveState:  true,
+      preserveScroll: true,
+      replace:        true,
+      onFinish: () => { loading.value = false },
+    }
+  )
 }
 
 let searchTimer = null
-function debouncedSearch() {
+function onSearchInput(val) {
+  localFilters.search = val
   clearTimeout(searchTimer)
   searchTimer = setTimeout(() => navigate({ page: 1 }), props.searchDebounce)
 }
 
-function sort(key) {
+function onSort(key) {
   if (localFilters.sort === key) {
     localFilters.direction = localFilters.direction === 'asc' ? 'desc' : 'asc'
-  } else { localFilters.sort = key; localFilters.direction = 'asc' }
+  } else {
+    localFilters.sort      = key
+    localFilters.direction = 'asc'
+  }
   navigate({ page: 1 })
 }
 
 function goToPage(page) { navigate({ page }) }
-function changePerPage() { navigate({ page: 1 }) }
 
+function onChangePerPage(n) {
+  localFilters.per_page = n
+  navigate({ page: 1 })
+}
+
+function clearFilters() {
+  localFilters.search    = ''
+  localFilters.sort      = ''
+  localFilters.direction = 'asc'
+  navigate({ page: 1 })
+}
+
+// ── Column toggle ─────────────────────────────────────────────────────────
+function toggleColumn(key) {
+  const col = toggleableColumns.find(c => c.key === key)
+  if (col) col.visible = !col.visible
+}
+
+// ── Selection ─────────────────────────────────────────────────────────────
 function toggleRow(row) {
   const id = row[props.rowKey]
-  selectedIds.value = selectedIds.value.includes(id) ? selectedIds.value.filter(i => i !== id) : [...selectedIds.value, id]
+  selectedIds.value = selectedIds.value.includes(id)
+    ? selectedIds.value.filter(i => i !== id)
+    : [...selectedIds.value, id]
   emit('selectionChange', selectedIds.value)
 }
+
 function toggleAll() {
   if (allSelected.value) {
-    selectedIds.value = selectedIds.value.filter(id => !props.rows.some(r => r[props.rowKey] === id))
+    selectedIds.value = selectedIds.value.filter(
+      id => !props.rows.some(r => r[props.rowKey] === id)
+    )
   } else {
     const s = new Set(selectedIds.value)
     props.rows.forEach(r => s.add(r[props.rowKey]))
@@ -235,119 +258,339 @@ function toggleAll() {
   emit('selectionChange', selectedIds.value)
 }
 
-function handleBulkAction(action) { emit('bulkAction', { action: action.key, ids: [...selectedIds.value] }) }
+// ── Favorite ──────────────────────────────────────────────────────────────
+function toggleFavorite(row) {
+  row._favorite = !row._favorite
+  emit('favoriteToggle', { id: row[props.rowKey], value: row._favorite })
+}
+
+// ── Bulk + Export ─────────────────────────────────────────────────────────
+function handleBulkAction(action) {
+  emit('bulkAction', { action: action.key, ids: [...selectedIds.value] })
+}
+
 function exportAs(format) {
   if (!props.exportUrl) return
-  const p = new URLSearchParams({ ...localFilters, ids: selectedIds.value.join(','), format })
+  const p = new URLSearchParams({
+    ...localFilters,
+    ids: selectedIds.value.join(','),
+    format,
+  })
   window.location.href = `${props.exportUrl}?${p}`
 }
 </script>
 
-<style scoped>
-.qdt-root { font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; font-size: 14px; color: #111827; width: 100%; border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; background: #fff; }
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   SHARED STYLES — used by DataTable.vue + all sub-components
+   ───────────────────────────────────────────────────────────────────────── */
 
-/* Toolbar */
-.qdt-toolbar { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid #f3f4f6; gap: 10px; flex-wrap: wrap; background: #fff; }
-.qdt-toolbar-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.qdt-search-wrap { position: relative; flex: 1; min-width: 200px; max-width: 340px; }
-.qdt-search-icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); width: 15px; height: 15px; color: #9ca3af; pointer-events: none; }
-.qdt-search-input { width: 100%; padding: 7px 12px 7px 32px; border: 1px solid #e5e7eb; border-radius: 7px; font-size: 13px; color: #374151; background: #fafafa; outline: none; transition: border-color .15s, box-shadow .15s; box-sizing: border-box; }
-.qdt-search-input:focus { border-color: #a5b4fc; background: #fff; box-shadow: 0 0 0 3px rgb(99 102 241 / .1); }
+/* Root */
+.qdt-root {
+  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-size: 13.5px;
+  color: #1f2937;
+  width: 100%;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  overflow: hidden;
+}
 
-/* Buttons */
-.qdt-btn { display: inline-flex; align-items: center; padding: 6px 12px; border-radius: 7px; font-size: 13px; font-weight: 500; cursor: pointer; border: 1px solid transparent; transition: all .15s; white-space: nowrap; line-height: 1; }
+/* ── Topbar ────────────────────────────────────────────────────────────── */
+.qdt-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  gap: 8px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid #f3f4f6;
+  background: #fff;
+}
+.qdt-topbar-filters {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap; flex: 1;
+}
+.qdt-topbar-right {
+  display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+}
+
+/* Filter input */
+.qdt-filter-input-wrap { position: relative; }
+.qdt-search-icon {
+  position: absolute; left: 8px; top: 50%;
+  transform: translateY(-50%);
+  color: #9ca3af; pointer-events: none;
+}
+.qdt-filter-input {
+  padding: 5px 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: inherit;
+  color: #374151;
+  background: #fafafa;
+  outline: none;
+  min-width: 130px;
+  transition: border-color .15s, box-shadow .15s;
+}
+.qdt-filter-input--search { padding-left: 28px; }
+.qdt-filter-input:focus {
+  border-color: #a5b4fc;
+  background: #fff;
+  box-shadow: 0 0 0 3px rgb(99 102 241 / .08);
+}
+.qdt-filter-input::placeholder { color: #9ca3af; }
+
+/* ── Buttons ───────────────────────────────────────────────────────────── */
+.qdt-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  font-size: 13px; font-weight: 500; font-family: inherit;
+  cursor: pointer; border: 1px solid transparent;
+  transition: all .15s; white-space: nowrap; line-height: 1;
+}
 .qdt-btn-outline { border-color: #e5e7eb; background: #fff; color: #374151; }
-.qdt-btn-outline:hover { background: #f9fafb; border-color: #d1d5db; }
-.qdt-btn-danger { background: #ef4444; color: #fff; }
+.qdt-btn-outline:hover,
+.qdt-btn-outline.qdt-btn--active,
+.qdt-btn--active { background: #f3f4f6; border-color: #d1d5db; }
+.qdt-btn-icon { padding: 5px 7px; }
+.qdt-btn-ghost { background: none; border-color: transparent; color: #9ca3af; }
+.qdt-btn-ghost:hover { color: #374151; background: #f3f4f6; }
+.qdt-btn-danger { background: #ef4444; color: #fff; border-color: #ef4444; }
 .qdt-btn-danger:hover { background: #dc2626; }
-.qdt-selected-badge { font-size: 12px; font-weight: 500; color: #6366f1; background: #eef2ff; padding: 3px 10px; border-radius: 20px; }
+.qdt-btn-primary { background: #6366f1; color: #fff; border-color: #6366f1; }
+.qdt-btn-primary:hover { background: #4f46e5; }
+.qdt-selected-badge {
+  font-size: 12px; font-weight: 500;
+  color: #6366f1; background: #eef2ff;
+  padding: 3px 9px; border-radius: 20px;
+}
 
-/* Dropdowns */
+/* ── Dropdowns ─────────────────────────────────────────────────────────── */
 .qdt-dropdown { position: relative; }
-.qdt-dropdown-menu { position: absolute; top: calc(100% + 6px); z-index: 50; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; box-shadow: 0 8px 24px rgb(0 0 0 / .10); min-width: 160px; padding: 4px; animation: qdt-pop .12s ease; }
-.qdt-dropdown-menu--right { right: 0; }
-@keyframes qdt-pop { from { opacity: 0; transform: translateY(-4px) scale(.97); } to { opacity: 1; transform: none; } }
-.qdt-dropdown-item { display: flex; align-items: center; width: 100%; padding: 7px 10px; font-size: 13px; color: #374151; border: none; background: none; cursor: pointer; border-radius: 5px; transition: background .12s; text-align: left; }
+.qdt-dropdown-menu {
+  position: absolute; top: calc(100% + 4px); left: 0; z-index: 100;
+  background: #fff; border: 1px solid #e5e7eb; border-radius: 8px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / .10);
+  min-width: 180px; padding: 4px;
+  animation: qdtpop .12s ease;
+}
+.qdt-dropdown-menu--right { left: auto; right: 0; }
+@keyframes qdtpop {
+  from { opacity: 0; transform: translateY(-3px) scale(.98); }
+  to   { opacity: 1; transform: none; }
+}
+.qdt-dropdown-section-title {
+  padding: 6px 10px 4px;
+  font-size: 11px; font-weight: 600; color: #9ca3af;
+  text-transform: uppercase; letter-spacing: .06em;
+}
+.qdt-dropdown-item {
+  display: flex; align-items: center;
+  width: 100%; padding: 7px 10px;
+  font-size: 13px; font-family: inherit; color: #374151;
+  border: none; background: none; cursor: pointer;
+  border-radius: 5px; transition: background .1s; text-align: left;
+}
 .qdt-dropdown-item:hover { background: #f3f4f6; }
-.qdt-dropdown-empty { display: block; padding: 8px 12px; font-size: 12px; color: #9ca3af; }
-.qdt-col-item { display: flex; align-items: center; gap: 8px; padding: 7px 10px; font-size: 13px; color: #374151; cursor: pointer; border-radius: 5px; transition: background .12s; }
+.qdt-dropdown-empty { display: block; padding: 10px 12px; font-size: 12px; color: #9ca3af; }
+.qdt-col-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 10px; font-size: 13px; color: #374151;
+  cursor: pointer; border-radius: 5px; transition: background .1s;
+}
 .qdt-col-item:hover { background: #f3f4f6; }
-.qdt-col-checkbox { width: 16px; height: 16px; border: 1.5px solid #d1d5db; border-radius: 4px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: all .12s; }
-.qdt-col-checkbox--on { background: #6366f1; border-color: #6366f1; }
+.qdt-col-checkbox {
+  width: 15px; height: 15px;
+  border: 1.5px solid #d1d5db; border-radius: 3px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; transition: all .12s;
+}
+.qdt-col-checkbox.on { background: #6366f1; border-color: #6366f1; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
 
-/* Table container + OVERLAY */
+/* ── Loading overlay ───────────────────────────────────────────────────── */
 .qdt-table-container { position: relative; }
-.qdt-overlay { position: absolute; inset: 0; background: rgb(255 255 255 / .72); z-index: 10; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(1px); }
-.qdt-spinner-wrap { background: #fff; border-radius: 50%; box-shadow: 0 2px 12px rgb(0 0 0 / .12); padding: 10px; display: flex; }
-.qdt-spinner { animation: qdt-spin .75s linear infinite; }
-@keyframes qdt-spin { to { transform: rotate(360deg); } }
+.qdt-overlay {
+  position: absolute; inset: 0;
+  background: rgba(255,255,255,.72); z-index: 20;
+  display: flex; align-items: center; justify-content: center;
+  backdrop-filter: blur(1px);
+}
+.qdt-spinner-wrap {
+  background: #fff; border-radius: 50%;
+  box-shadow: 0 2px 12px rgb(0 0 0/.12); padding: 9px; display: flex;
+}
+.qdt-spinner { animation: qdtspin .7s linear infinite; }
+@keyframes qdtspin { to { transform: rotate(360deg); } }
 .qdt-fade-enter-active, .qdt-fade-leave-active { transition: opacity .18s; }
 .qdt-fade-enter-from, .qdt-fade-leave-to { opacity: 0; }
 .qdt-table-scroll { overflow-x: auto; }
 
-/* Table */
-.qdt-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
-.qdt-th { padding: 11px 16px; text-align: left; font-size: 13px; font-weight: 600; color: #6b7280; background: #f9fafb; border-bottom: 1px solid #e5e7eb; white-space: nowrap; user-select: none; }
-.qdt-th--check { width: 40px; padding: 11px 8px 11px 16px; }
-.qdt-th--actions { width: 80px; }
+/* ── Table ─────────────────────────────────────────────────────────────── */
+.qdt-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+
+.qdt-th {
+  padding: 8px 12px; text-align: left;
+  font-size: 12.5px; font-weight: 600; color: #6b7280;
+  background: #fff; border-bottom: 1px solid #e5e7eb;
+  white-space: nowrap; user-select: none;
+}
+.qdt-th--check { width: 36px; padding: 8px 6px 8px 14px; }
+.qdt-th--fav   { width: 28px; padding: 8px 4px; }
+.qdt-th--count {
+  text-align: right; padding-right: 14px; width: 90px;
+  color: #9ca3af; font-weight: 500; font-size: 12px;
+}
+.qdt-th--numeric { text-align: right; }
 .qdt-th--sortable { cursor: pointer; }
-.qdt-th--sortable:hover { background: #f3f4f6; color: #374151; }
+.qdt-th--sortable:hover { color: #374151; background: #fafafa; }
 .qdt-th--sorted { color: #4f46e5; }
-.qdt-th-inner { display: flex; align-items: center; gap: 5px; }
+.qdt-th-inner { display: flex; align-items: center; gap: 4px; }
 .qdt-sort-icon { display: flex; align-items: center; flex-shrink: 0; }
-.qdt-td { padding: 11px 16px; border-bottom: 1px solid #f3f4f6; color: #374151; vertical-align: middle; }
-.qdt-td--check { width: 40px; padding: 11px 8px 11px 16px; }
-.qdt-td--actions { padding: 8px 12px; white-space: nowrap; }
+.qdt-record-count { font-variant-numeric: tabular-nums; }
+
+.qdt-td {
+  padding: 9px 12px;
+  border-bottom: 1px solid #f3f4f6;
+  color: #1f2937; vertical-align: middle;
+}
+.qdt-td--check { width: 36px; padding: 9px 6px 9px 14px; }
+.qdt-td--fav   { width: 28px; padding: 9px 4px; }
+.qdt-td--numeric { text-align: right; }
+.qdt-td--rowactions {
+  padding: 9px 12px 9px 6px; white-space: nowrap;
+  text-align: right; width: 1%;
+}
 .qdt-tr:last-child .qdt-td { border-bottom: none; }
 .qdt-tr:hover .qdt-td { background: #fafafa; }
 .qdt-tr--selected .qdt-td { background: #eef2ff !important; }
+
+/* Row actions — show on hover only */
+.qdt-row-actions-wrap {
+  display: flex; align-items: center; justify-content: flex-end; gap: 6px;
+  opacity: 0; transition: opacity .12s;
+}
+.qdt-tr:hover .qdt-row-actions-wrap,
+.qdt-tr--selected .qdt-row-actions-wrap { opacity: 1; }
+
+/* ── Checkbox — rounded ────────────────────────────────────────────────── */
+.qdt-checkbox {
+  width: 15px; height: 15px;
+  cursor: pointer;
+  accent-color: #6366f1;
+  border-radius: 4px;   /* rounded checkbox */
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1.5px solid #d1d5db;
+  background: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all .12s;
+  position: relative;
+}
+.qdt-checkbox:checked {
+  background: #6366f1;
+  border-color: #6366f1;
+}
+.qdt-checkbox:checked::after {
+  content: '';
+  display: block;
+  width: 4px; height: 7px;
+  border: 1.5px solid #fff;
+  border-top: none; border-left: none;
+  transform: rotate(45deg) translate(-1px, -1px);
+}
+.qdt-checkbox:indeterminate {
+  background: #6366f1;
+  border-color: #6366f1;
+}
+.qdt-checkbox:indeterminate::after {
+  content: '';
+  display: block;
+  width: 7px; height: 1.5px;
+  background: #fff;
+  border-radius: 1px;
+}
+.qdt-checkbox:hover:not(:checked):not(:indeterminate) {
+  border-color: #a5b4fc;
+  background: #f5f3ff;
+}
+
+/* Favorite */
+.qdt-fav-btn {
+  background: none; border: none; cursor: pointer;
+  padding: 2px; display: flex; align-items: center;
+  opacity: .3; transition: opacity .12s;
+}
+.qdt-fav-btn:hover, .qdt-fav-btn.active { opacity: 1; }
+
+/* Empty state */
 .qdt-td-empty { padding: 0; border: none; }
-.qdt-empty-inner { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 48px 20px; gap: 10px; color: #9ca3af; font-size: 13px; }
-.qdt-checkbox { width: 15px; height: 15px; cursor: pointer; accent-color: #6366f1; }
+.qdt-empty-inner {
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  padding: 52px 20px; gap: 10px;
+  color: #9ca3af; font-size: 13px;
+}
 
-/* Footer */
-.qdt-footer { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; border-top: 1px solid #f3f4f6; background: #fff; gap: 12px; flex-wrap: wrap; }
-.qdt-footer-left { font-size: 13px; color: #6b7280; }
-.qdt-footer-right { display: flex; align-items: center; gap: 14px; }
-.qdt-perpage-label { font-size: 13px; color: #6b7280; white-space: nowrap; }
-.qdt-select-wrap { position: relative; display: inline-flex; align-items: center; }
-.qdt-perpage-select { appearance: none; padding: 5px 28px 5px 10px; border: 1px solid #e5e7eb; border-radius: 7px; font-size: 13px; color: #374151; background: #fff; cursor: pointer; outline: none; }
-.qdt-perpage-select:focus { border-color: #a5b4fc; }
-.qdt-select-caret { position: absolute; right: 8px; pointer-events: none; color: #9ca3af; }
-.qdt-page-info { font-size: 13px; color: #6b7280; white-space: nowrap; }
+/* ── Footer ────────────────────────────────────────────────────────────── */
+.qdt-footer {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 14px; border-top: 1px solid #f3f4f6; background: #fff; gap: 10px;
+}
+.qdt-perpage-pills { display: flex; align-items: center; gap: 2px; }
+.qdt-pill {
+  min-width: 36px; height: 28px; padding: 0 10px;
+  border: 1px solid #e5e7eb; border-radius: 6px;
+  background: #fff; font-size: 12.5px; font-family: inherit;
+  font-weight: 500; color: #374151; cursor: pointer; transition: all .12s;
+}
+.qdt-pill:hover { background: #f3f4f6; border-color: #d1d5db; }
+.qdt-pill--active { background: #1f2937; color: #fff; border-color: #1f2937; }
+.qdt-footer-right { display: flex; align-items: center; gap: 8px; }
+.qdt-page-info { font-size: 12.5px; color: #6b7280; white-space: nowrap; }
 .qdt-pagination { display: flex; align-items: center; gap: 2px; }
-.qdt-pag-btn { display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; border: 1px solid #e5e7eb; border-radius: 7px; background: #fff; color: #374151; cursor: pointer; transition: all .15s; }
-.qdt-pag-btn:hover:not(:disabled) { background: #f3f4f6; border-color: #d1d5db; }
-.qdt-pag-btn:disabled { opacity: .35; cursor: not-allowed; }
+.qdt-pag-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px;
+  border: 1px solid #e5e7eb; border-radius: 6px;
+  background: #fff; color: #6b7280; cursor: pointer; transition: all .12s;
+}
+.qdt-pag-btn:hover:not(:disabled) { background: #f3f4f6; color: #1f2937; border-color: #d1d5db; }
+.qdt-pag-btn:disabled { opacity: .3; cursor: not-allowed; }
 
-/* Dark mode */
+/* ── Dark mode ─────────────────────────────────────────────────────────── */
 @media (prefers-color-scheme: dark) {
-  .qdt-root { background: #1f2937; border-color: #374151; color: #f3f4f6; }
-  .qdt-toolbar { background: #1f2937; border-color: #374151; }
-  .qdt-search-input { background: #111827; border-color: #374151; color: #f3f4f6; }
-  .qdt-search-input:focus { background: #111827; border-color: #6366f1; }
-  .qdt-btn-outline { background: #111827; border-color: #374151; color: #d1d5db; }
-  .qdt-btn-outline:hover { background: #1f2937; border-color: #4b5563; }
+  .qdt-root { background: #111827; border-color: #374151; color: #f3f4f6; }
+  .qdt-topbar { background: #111827; border-color: #374151; }
+  .qdt-filter-input { background: #1f2937; border-color: #374151; color: #f3f4f6; }
+  .qdt-filter-input:focus { background: #1f2937; border-color: #6366f1; }
+  .qdt-btn-outline { background: #1f2937; border-color: #374151; color: #d1d5db; }
+  .qdt-btn-outline:hover { background: #374151; }
   .qdt-dropdown-menu { background: #1f2937; border-color: #374151; }
   .qdt-dropdown-item { color: #d1d5db; }
-  .qdt-dropdown-item:hover { background: #111827; }
+  .qdt-dropdown-item:hover { background: #374151; }
   .qdt-col-item { color: #d1d5db; }
-  .qdt-col-item:hover { background: #111827; }
-  .qdt-col-checkbox { border-color: #4b5563; }
+  .qdt-col-item:hover { background: #374151; }
   .qdt-th { background: #111827; color: #9ca3af; border-color: #374151; }
-  .qdt-th--sortable:hover { background: #1a2332; color: #d1d5db; }
-  .qdt-td { color: #d1d5db; border-color: #374151; }
-  .qdt-tr:hover .qdt-td { background: #111827; }
+  .qdt-th--sortable:hover { background: #1f2937; color: #f3f4f6; }
+  .qdt-td { color: #e5e7eb; border-color: #1f2937; }
+  .qdt-tr:hover .qdt-td { background: #1f2937; }
   .qdt-tr--selected .qdt-td { background: #1e1b4b !important; }
-  .qdt-footer { background: #1f2937; border-color: #374151; }
-  .qdt-footer-left { color: #9ca3af; }
-  .qdt-perpage-label { color: #9ca3af; }
-  .qdt-perpage-select { background: #111827; border-color: #374151; color: #d1d5db; }
-  .qdt-page-info { color: #9ca3af; }
-  .qdt-pag-btn { background: #111827; border-color: #374151; color: #d1d5db; }
-  .qdt-pag-btn:hover:not(:disabled) { background: #1f2937; }
-  .qdt-overlay { background: rgb(31 41 55 / .75); }
+  .qdt-checkbox { border-color: #4b5563; background: #1f2937; }
+  .qdt-checkbox:hover:not(:checked):not(:indeterminate) { background: #312e81; border-color: #6366f1; }
+  .qdt-footer { background: #111827; border-color: #374151; }
+  .qdt-pill { background: #1f2937; border-color: #374151; color: #d1d5db; }
+  .qdt-pill:hover { background: #374151; }
+  .qdt-pill--active { background: #f9fafb; color: #111827; border-color: #f9fafb; }
+  .qdt-pag-btn { background: #1f2937; border-color: #374151; color: #9ca3af; }
+  .qdt-pag-btn:hover:not(:disabled) { background: #374151; color: #f3f4f6; }
+  .qdt-overlay { background: rgba(17,24,39,.75); }
   .qdt-spinner-wrap { background: #1f2937; }
 }
 </style>
