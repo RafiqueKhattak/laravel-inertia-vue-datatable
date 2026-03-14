@@ -2,7 +2,15 @@
     "name": "qbits/laravel-inertia-vue-datatable",
     "description": "A powerful DataTable package for Laravel + Inertia.js + Vue 3 with server-side pagination, sorting, filtering, row selection, bulk actions, and export.",
     "type": "library",
-    "keywords": ["laravel", "inertia", "vue", "datatable", "table", "pagination", "qbits"],
+    "keywords": [
+        "laravel",
+        "inertia",
+        "vue",
+        "datatable",
+        "table",
+        "pagination",
+        "qbits"
+    ],
     "license": "MIT",
     "authors": [
         {
@@ -37,7 +45,6 @@
             ]
         }
     },
-    "version": "1.0.2",
     "minimum-stability": "dev",
     "prefer-stable": true
 }
